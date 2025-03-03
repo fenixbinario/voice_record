@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <!-- Autor y web -->
+<meta name="author" content="@fenixbinario">
+<meta name="description" content="Grabador de voz con visualización de ondas y descarga.">
+<meta name="keywords" content="grabador de voz, audio, visualizador, descarga, FenixBinario">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://voice.fenixbinario.com">
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grabador de Voz</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="flex flex-col items-center  justify-center min-h-screen bg-gray-100 p-4">
+    <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-lg text-center">
+        <h1 class="text-2xl font-bold mb-4">Grabador de Voz</h1>
+        <canvas id="visualizer" class="w-full h-24 bg-gray-200 mb-4"></canvas>
+        <button id="startBtn" class="bg-green-500 text-white px-4 py-2 rounded-lg">Grabar</button>
+        <button id="stopBtn" class="bg-red-500 text-white px-4 py-2 rounded-lg hidden">Detener</button>
+        <input id="filename" type="text" class="border mt-4 p-2 w-full" placeholder="Nombre del archivo">
+        <div id="recordingsList" class="mt-4 space-y-2"></div>
+    </div>
+
+    <script>
+        let mediaRecorder, audioChunks = [];
+        let audioCounter = 1;
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const filenameInput = document.getElementById('filename');
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+        const recordingsList = document.getElementById('recordingsList');
+        let audioCtx, analyser, dataArray, source;
+
+        async function startRecording() {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+            mediaRecorder.onstop = saveRecording;
+            mediaRecorder.start();
+            visualizeAudio(stream);
+            stopBtn.classList.remove('hidden');
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            stopBtn.classList.add('hidden');
+            startBtn.classList.remove('hidden');
+        }
+
+        function saveRecording() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const name = filenameInput.value.trim() || `grabacion_${audioCounter++}`;
+            addRecordingToList(audioUrl, name);
+        }
+
+        function addRecordingToList(audioUrl, name) {
+            const recordingItem = document.createElement('div');
+            recordingItem.classList.add('flex', 'items-center', 'justify-between', 'bg-gray-200', 'p-2', 'rounded-lg');
+            
+            const audioElement = document.createElement('audio');
+            audioElement.src = audioUrl;
+            audioElement.controls = true;
+            audioElement.classList.add('mr-2');
+            audioElement.addEventListener('play', () => visualizePlayback(audioElement));
+            
+            const label = document.createElement('span');
+            label.textContent = name;
+            label.classList.add('text-sm', 'font-semibold', 'mr-2');
+            
+            const downloadBtn = document.createElement('a');
+            downloadBtn.href = audioUrl;
+            downloadBtn.download = `${name}.wav`;
+            downloadBtn.textContent = 'Guardar';
+            downloadBtn.classList.add('bg-blue-500', 'text-white', 'px-2', 'py-1', 'rounded-lg', 'mr-2');
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = 'Eliminar';
+            deleteBtn.classList.add('bg-red-500', 'text-white', 'px-2', 'py-1', 'rounded-lg');
+            deleteBtn.addEventListener('click', () => recordingItem.remove());
+            
+            recordingItem.appendChild(audioElement);
+            recordingItem.appendChild(label);
+            recordingItem.appendChild(downloadBtn);
+            recordingItem.appendChild(deleteBtn);
+            
+            recordingsList.appendChild(recordingItem);
+        }
+
+        function visualizeAudio(stream) {
+            audioCtx = new AudioContext();
+            analyser = audioCtx.createAnalyser();
+            source = audioCtx.createMediaStreamSource(stream);
+            source.connect(analyser);
+            analyser.fftSize = 256;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            drawVisualizer();
+        }
+
+        function visualizePlayback(audioElement) {
+            if (audioCtx) audioCtx.close();
+            audioCtx = new AudioContext();
+            analyser = audioCtx.createAnalyser();
+            const playbackSource = audioCtx.createMediaElementSource(audioElement);
+            playbackSource.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            drawVisualizer();
+        }
+
+        function drawVisualizer() {
+            function draw() {
+                requestAnimationFrame(draw);
+                analyser.getByteFrequencyData(dataArray);
+                ctx.fillStyle = 'rgb(100, 100, 100)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgb(255, 255, 255)';
+                ctx.beginPath();
+                const sliceWidth = canvas.width / dataArray.length;
+                let x = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                    const v = dataArray[i] / 255;
+                    const y = v * canvas.height;
+                    ctx.lineTo(x, canvas.height - y);
+                    x += sliceWidth;
+                }
+                ctx.stroke();
+            }
+            draw();
+        }
+
+        startBtn.addEventListener('click', startRecording);
+        stopBtn.addEventListener('click', stopRecording);
+    </script>
+</body>
+</html>
